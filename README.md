@@ -2,7 +2,7 @@
 
 > A production-oriented Retrieval Augmented Generation (RAG) system designed to help employees query internal knowledge bases using natural language. The solution runs locally with Ollama, requires no API keys, and is built to be accurate, grounded, and practical for enterprise use.
 
-**Assignment:** AI Engineer — Enterprise Knowledge Assistant  
+**Enterprise Knowledge Assistant**  
 **Built by:** Vidhi Waghela
 
 ---
