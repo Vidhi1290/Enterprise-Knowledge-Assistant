@@ -1,0 +1,75 @@
+[
+  {
+    "question": "What is the employee leave policy?",
+    "expected_keywords": ["24", "leave", "annual"],
+    "category": "HR",
+    "difficulty": "easy"
+  },
+  {
+    "question": "How many sick leaves do employees get per year?",
+    "expected_keywords": ["12", "sick"],
+    "category": "HR",
+    "difficulty": "easy"
+  },
+  {
+    "question": "What is the refund policy for subscriptions?",
+    "expected_keywords": ["30", "refund", "days"],
+    "category": "Customer",
+    "difficulty": "easy"
+  },
+  {
+    "question": "What is the API rate limit for business tier?",
+    "expected_keywords": ["500", "minute"],
+    "category": "Technical",
+    "difficulty": "medium"
+  },
+  {
+    "question": "What is the notice period for confirmed employees?",
+    "expected_keywords": ["3", "months", "notice"],
+    "category": "HR",
+    "difficulty": "easy"
+  },
+  {
+    "question": "How long does it take to process a refund?",
+    "expected_keywords": ["5", "7", "business", "days"],
+    "category": "Customer",
+    "difficulty": "medium"
+  },
+  {
+    "question": "What certifications does TechCorp have?",
+    "expected_keywords": ["SOC 2", "ISO 27001"],
+    "category": "Technical",
+    "difficulty": "medium"
+  },
+  {
+    "question": "What is the work from home policy?",
+    "expected_keywords": ["2", "days", "week"],
+    "category": "HR",
+    "difficulty": "easy"
+  },
+  {
+    "question": "What are the SLA uptime guarantees for enterprise customers?",
+    "expected_keywords": ["99.99", "enterprise"],
+    "category": "Customer",
+    "difficulty": "hard"
+  },
+  {
+    "question": "Can I get a refund after 6 months?",
+    "expected_keywords": ["30", "days", "refund"],
+    "category": "Customer",
+    "difficulty": "hard"
+  },
+  {
+    "question": "What is the salary increment for employees who exceed expectations?",
+    "expected_keywords": ["15", "25", "percent"],
+    "category": "HR",
+    "difficulty": "medium"
+  },
+  {
+    "question": "What is the vacation policy for the CEO?",
+    "expected_keywords": [],
+    "expected_no_answer": true,
+    "category": "Edge Case",
+    "difficulty": "edge"
+  }
+]

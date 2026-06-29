@@ -1,0 +1,22 @@
+# Vector Store — FAISS (no sqlite needed, works on Python 3.9 Mac)
+faiss-cpu>=1.7.4
+
+# Ollama HTTP client
+requests>=2.31.0
+
+# API Layer
+fastapi>=0.95.2
+uvicorn[standard]>=0.18.3
+python-multipart>=0.0.9
+pydantic>=1.9
+
+# UI
+streamlit>=1.28.0
+
+# Document Loaders
+pdfplumber>=0.9.0
+python-docx>=0.8.11
+
+# Utilities
+tqdm>=4.65.0
+numpy>=1.22.5
