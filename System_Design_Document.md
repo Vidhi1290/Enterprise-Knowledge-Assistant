@@ -1,285 +1,259 @@
-# System Design Document
 # Enterprise Knowledge Assistant
+## System Design Document
 
-## 1. Overview
+## 1. Introduction
 
-The Enterprise Knowledge Assistant is a local-first Retrieval Augmented Generation (RAG) system built to help employees query internal documents using natural language. The solution is designed for enterprise environments where privacy, grounding, and reliability are essential. Instead of relying on external APIs, the application uses Ollama for both language generation and embeddings, combined with a local FAISS vector index for rapid retrieval.
+The Enterprise Knowledge Assistant is a local-first Retrieval Augmented Generation (RAG) system designed to answer questions from internal enterprise documentation using natural language. The system is intended for organizations that need a practical, privacy-preserving, and technically robust way to make internal knowledge searchable and accessible to employees.
 
-The system enables users to ingest documents, search them semantically, and receive concise answers with source citations. It is suitable for HR policies, compliance documentation, technical guides, customer FAQs, and other internal knowledge sources.
+The solution combines document ingestion, semantic retrieval, context-grounded generation, and source citation into a single end-to-end workflow. Unlike many cloud-based assistants, this implementation runs locally using Ollama, allowing sensitive internal documents to remain on-device while still delivering high-quality conversational responses.
 
----
-
-## 2. Objectives
-
-The primary goals of the system are:
-
-1. Allow employees to ask natural-language questions about internal knowledge.
-2. Retrieve relevant information from uploaded documents.
-3. Generate grounded answers that remain faithful to the source content.
-4. Provide source references so users can verify the result.
-5. Run entirely locally for privacy and compliance reasons.
+This document presents the architecture, design rationale, data flow, retrieval strategy, evaluation approach, and scalability considerations of the system.
 
 ---
 
-## 3. Business Context
+## 2. Problem Statement
 
-Many organizations store important information across multiple documents and formats. Employees waste significant time manually searching these files for answers. The Enterprise Knowledge Assistant reduces this effort by offering a conversational interface that retrieves relevant information instantly and produces accurate answers grounded in the company’s own knowledge base.
+Enterprises often store critical knowledge across multiple document types, including HR policies, technical guides, customer support content, compliance documents, and process handbooks. Employees frequently spend significant time manually locating the relevant information. The objective of this project is to reduce that friction by building an intelligent assistant that can understand a natural-language question and retrieve the correct information from the organization’s knowledge base.
 
-This is especially valuable for:
+The system must therefore support:
 
-- HR policies and employee support
-- Technical documentation and troubleshooting
-- Compliance and process documents
-- Customer support knowledge bases
-
----
-
-## 4. Functional Requirements
-
-The system must support the following:
-
-- Document ingestion from common file formats such as PDF, TXT, Markdown, DOCX, and CSV
-- Text extraction and preprocessing
-- Chunking and metadata preservation
-- Vector embedding generation
-- Semantic search over the indexed knowledge base
-- Response generation using retrieved context
-- Source citations in answers
-- A user-facing interface through Streamlit and a REST API
-- A command-line interface for usage and evaluation
+- ingestion of diverse internal documents,
+- extraction of meaningful content from those documents,
+- semantic indexing for retrieval,
+- answer generation grounded in retrieved evidence,
+- and transparent source attribution.
 
 ---
 
-## 5. High-Level Architecture
+## 3. Design Objectives
 
-The system is composed of four major layers:
+The system was designed with the following goals in mind:
 
-1. Interface Layer
-   - Streamlit web app for interactive use
-   - FastAPI API for programmatic access
-   - CLI for ingestion and evaluation
-
-2. Application Layer
-   - Document ingestion workflow
-   - Retrieval pipeline
-   - Answer generation pipeline
-
-3. Storage and Search Layer
-   - FAISS vector index for semantic retrieval
-   - Metadata JSON files for source and chunk information
-
-4. Model Layer
-   - Ollama LLM for answer generation
-   - Ollama embedding model for document and query embeddings
-
-The architecture is intentionally simple and modular so it can be extended in the future without redesigning the whole system.
+1. Accuracy and grounding: answers should be based on the indexed knowledge base rather than unsupported model memory.
+2. Privacy: the system should operate locally without depending on external LLM or embedding APIs.
+3. Simplicity and maintainability: the implementation should be modular and understandable.
+4. Practicality: the solution should be usable through a Streamlit interface, a REST API, and a CLI.
+5. Extensibility: the architecture should allow future improvements such as re-ranking, authentication, and deployment orchestration.
 
 ---
 
-## 6. Component Design
+## 4. System Architecture
 
-### 6.1 Ingestion Module
+The system follows a modular RAG architecture composed of four main layers:
 
-The ingestion module is responsible for loading files, extracting text, splitting documents into chunks, embedding those chunks, and storing them in a searchable index.
+- Interface Layer: Streamlit, FastAPI, and CLI
+- Application Layer: ingestion, retrieval, and generation logic
+- Search and Storage Layer: FAISS vector store with metadata persistence
+- Model Layer: Ollama-based LLM and embedding models
 
-Responsibilities:
+### 4.1 Architecture Diagram
 
-- detect supported file types,
-- extract raw text from each file,
-- split text into manageable chunks,
-- attach metadata such as source filename and page number,
-- generate embeddings,
-- and store the chunks in the vector store.
+```text
++---------------------------+      +---------------------------+
+|      User Interface       |      |      REST / CLI Layer     |
+|  Streamlit / FastAPI      |<---->|  ask / ingest / stats     |
++-------------+-------------+      +-------------+-------------+
+              |                                    |
+              v                                    v
++---------------------------+      +---------------------------+
+|   RAG Application Layer   |      |   Document Ingestion      |
+| - query handling         |      | - load / extract / chunk |
+| - retrieval orchestration|      | - embed / index / store   |
+| - grounded generation    |      +------------+--------------+
++-------------+-------------+                   |
+              |                                 v
+              |                      +---------------------------+
+              |                      |   Vector Search Layer     |
+              |                      |   FAISS Index + Metadata |
+              |                      +-------------+-------------+
+              |                                    |
+              v                                    v
++---------------------------+      +---------------------------+
+|   LLM & Embedding Layer  |      |   Local Document Store    |
+|   Ollama: llama3.2:3b    |      |   PDFs / TXT / MD / DOCX   |
+|   Ollama: nomic-embed    |      |   CSV / chunk metadata    |
++---------------------------+      +---------------------------+
+```
 
-This component ensures that the knowledge base remains structured and searchable.
+### 4.2 Architectural Summary
 
-### 6.2 Retrieval Module
+The pipeline begins when a user submits a question or uploads a document. The system processes the document into chunks, generates embeddings, stores them in a FAISS index, and later retrieves the best matching chunks for a question. These chunks are passed to the local LLM, which generates a grounded answer and cites the relevant source documents.
 
-The retrieval module takes a user question, converts it into an embedding, searches the index for relevant chunks, and returns the highest-scoring candidates.
+---
 
-The retrieval strategy uses:
+## 5. Core Components
 
-- semantic similarity via embeddings,
-- keyword matching using BM25-style scoring,
-- and Reciprocal Rank Fusion (RRF) to blend both signals.
+### 5.1 Ingestion Module
 
-This increases retrieval quality by balancing meaning-based and exact-match retrieval.
+The ingestion module is responsible for transforming raw documents into searchable knowledge chunks. It handles:
 
-### 6.3 Generation Module
+- file discovery,
+- format-specific loading,
+- text extraction,
+- chunking with overlap,
+- metadata preservation,
+- embedding generation, and
+- storage in the vector index.
 
-The generation module uses the retrieved context as grounding to produce a concise answer. The prompt is designed to force the model to answer only from the provided context and include source references.
+The design prioritizes deterministic preprocessing and structured metadata so that retrieval quality remains high and answers can be traced back to their origin.
 
-This design reduces hallucination risk and improves trustworthiness in enterprise settings.
+### 5.2 Retrieval Module
 
-### 6.4 Storage Module
+The retrieval module takes a user query, converts it into an embedding, and searches the vector store for the most relevant chunks. The algorithm combines:
 
-The storage module uses FAISS for efficient similarity search. Each stored chunk contains:
+- semantic search via embeddings,
+- keyword-based relevance via BM25-style scoring,
+- and Reciprocal Rank Fusion (RRF) to merge both ranking signals.
 
-- text content,
-- source document information,
+This hybrid strategy is particularly effective for enterprise queries that may contain both abstract concepts and specific terms such as policy numbers, document names, or technical acronyms.
+
+### 5.3 Generation Module
+
+The generation module uses the retrieved context as grounding input for the LLM. The model is instructed to answer only from that context and to cite sources. This design is crucial for reducing hallucinations and improving the reliability of the assistant in enterprise settings.
+
+### 5.4 Storage Module
+
+The storage module uses FAISS as the vector index. Each stored chunk is associated with metadata including:
+
+- source document name,
 - page number,
 - chunk index,
-- and file hash metadata for deduplication.
+- and file hash for deduplication.
 
-FAISS is used because it is lightweight, fast, and avoids the dependency issues associated with some other vector database setups.
+This enables precise citations and supports future extensions such as document-level filtering and permissions.
 
 ---
 
-## 7. Data Flow
+## 6. Data Flow
 
-### 7.1 Ingestion Flow
+### 6.1 Document Ingestion Flow
 
-1. User uploads or points the system to documents.
-2. The ingestion module detects supported file types.
-3. Text is extracted from the document.
-4. The content is divided into chunks.
-5. Embeddings are generated for each chunk.
-6. Chunks are stored in the FAISS index with metadata.
+1. The user uploads one or more documents.
+2. The ingestion pipeline detects the file type.
+3. The document is parsed into text.
+4. The text is split into chunks with overlap.
+5. Each chunk is embedded using an Ollama embedding model.
+6. The chunk embeddings and metadata are stored in the FAISS index.
 
-### 7.2 Query Flow
+### 6.2 Query Flow
 
-1. The user submits a question.
+1. The user submits a natural-language question.
 2. The query is embedded using the same embedding model.
-3. The system retrieves relevant chunks from the FAISS index.
-4. The retrieved chunks are re-scored using keyword heuristics.
-5. The most relevant context is assembled.
-6. The LLM generates a grounded answer using that context.
-7. The system returns the answer, source references, and confidence.
+3. The vector store retrieves candidate chunks.
+4. Candidate chunks are re-scored using keyword-based relevance.
+5. The highest-quality context is passed to the LLM.
+6. The model produces a concise answer with citations.
+7. The answer, references, and confidence score are returned to the user.
 
 ---
 
-## 8. Technical Design Choices
+## 7. Technical Design Choices
 
-### 8.1 Local-first deployment
-The solution is designed to run entirely on the local machine. This helps avoid cloud data transfer and makes the system practical for private enterprise documents.
+### 7.1 Local-first Deployment
+The system is implemented to run without external API dependencies. Ollama provides local LLM and embedding inference, ensuring privacy and independence from cloud services.
 
-### 8.2 Ollama for LLM and embeddings
-Ollama provides local model execution for both generation and embeddings. This ensures that no API keys are required and all processing remains on-device.
+### 7.2 Choice of LLM
+The default model is llama3.2:3b, selected for its balance of speed, quality, and local execution feasibility. The architecture is flexible enough to switch to other locally available models if needed.
 
-### 8.3 FAISS for vector search
-FAISS provides efficient similarity search with low operational overhead. It is appropriate for medium-sized internal knowledge bases and is easy to run locally.
+### 7.3 Choice of Embedding Model
+The embedding model is nomic-embed-text, chosen for its retrieval-oriented performance and local runtime support. This makes semantic search practical without external embedding services.
 
-### 8.4 Prompt grounding
-The system uses a strict system prompt instructing the model to answer only from the retrieved context. This is essential for minimizing hallucinations.
+### 7.4 Choice of Vector Store
+FAISS was selected because it is lightweight, efficient, and does not require the dependency stack associated with some other vector databases. It is well suited for this project’s scope and environment constraints.
 
-### 8.5 Source attribution
-Each response includes document and page citations so the user can validate the generated answer.
+### 7.5 Chunking Strategy
+The system uses a recursive chunking approach to preserve semantic coherence. The chunk size and overlap are tuned to balance retrieval precision and contextual completeness.
 
----
-
-## 9. Retrieval Strategy
-
-The retrieval pipeline is intentionally hybrid rather than purely semantic.
-
-### Semantic retrieval
-Semantic retrieval uses embeddings to find chunks that are conceptually similar to the user query.
-
-### Keyword retrieval
-Keyword retrieval helps with exact-match questions, names, acronyms, or terminology that may not be captured well by embeddings alone.
-
-### RRF fusion
-Reciprocal Rank Fusion combines the ranking lists from both retrieval methods to improve robustness. This is especially useful for enterprise documents where users may ask precise questions with domain-specific vocabulary.
+### 7.6 Grounded Prompting
+The prompt instructs the model to answer only from the retrieved context and to cite sources. This is essential for trustworthy enterprise use and directly supports hallucination prevention.
 
 ---
 
-## 10. Prompt Engineering
+## 8. Retrieval Strategy
 
-The generation prompt is designed to be strict and reliable:
+The retrieval strategy is designed to be robust for both conceptual and exact-match questions. A purely semantic system can miss precise terms, while a purely keyword-based system can fail to capture intent. The solution combines both approaches.
 
-- answer only from provided context,
+### 8.1 Semantic Retrieval
+Semantic retrieval uses embeddings to identify chunks that are conceptually related to the user’s query.
+
+### 8.2 Keyword Retrieval
+Keyword retrieval uses BM25-style scoring to emphasize exact terms and domain-specific vocabulary.
+
+### 8.3 Reciprocal Rank Fusion
+The system combines the ranked results from both retrieval methods using Reciprocal Rank Fusion. This provides a more stable and balanced retrieval outcome.
+
+This hybrid retrieval strategy is one of the strongest technical aspects of the system and directly supports the project’s evaluation criteria.
+
+---
+
+## 9. Prompt Engineering and Generation
+
+Prompt design is central to the assistant’s reliability. The generation prompt instructs the model to:
+
+- answer strictly from the provided context,
 - remain concise,
-- cite the relevant source(s),
-- and if no relevant information exists, explicitly say that the information is not available in the knowledge base.
+- cite the relevant source documents,
+- and indicate when the knowledge base does not contain enough information.
 
-This makes the assistant more dependable for practical enterprise use.
-
----
-
-## 11. Handling Ambiguity and Uncertainty
-
-The system is designed to avoid making up information. If the retrieved context does not contain enough evidence, the assistant returns a safe response stating that the knowledge base does not contain the requested information.
-
-This is an important design principle for enterprise-grade AI systems because hallucinated answers can be harmful or misleading.
+This level of grounding is essential for enterprise applications where incorrect or fabricated answers can be costly.
 
 ---
 
-## 12. Evaluation Approach
+## 10. User Interface and Interaction Modes
 
-The project includes an evaluation workflow to test the assistant on sample questions and measure its behavior.
+The system provides three interaction modes:
 
-### Evaluation dimensions
+1. Streamlit web application for interactive chat and document upload
+2. FastAPI API for integration with other systems
+3. CLI for ingestion, querying, evaluation, and statistics
 
-- correctness of retrieved information,
-- relevance of generated answers,
-- citation behavior,
-- and hallucination prevention.
-
-### Evaluation methodology
-
-The assistant is tested against question-answer scenarios that include:
-
-- direct factual questions,
-- multi-step questions,
-- cross-document lookups,
-- and unanswered questions.
-
-The evaluation process helps identify where retrieval quality or prompt behavior needs improvement.
+This multi-mode design improves usability and makes the project suitable for both demos and practical deployment scenarios.
 
 ---
 
-## 13. Scalability Considerations
+## 11. Evaluation Approach
 
-The current implementation is well-suited for small to medium internal knowledge bases. It can be scaled further in several ways:
+The project includes an evaluation workflow to assess retrieval quality and answer usefulness. The evaluation focuses on:
 
-- use a more scalable vector database such as Qdrant or Weaviate,
-- add re-ranking for improved retrieval accuracy,
-- parallelize ingestion for large document volumes,
-- integrate asynchronous job queues for bulk ingestion,
-- and add role-based access controls for multi-tenant enterprise usage.
+- factual accuracy,
+- relevance of retrieved context,
+- source citation quality,
+- and hallucination avoidance.
 
-The current system is intentionally simple and production-friendly while remaining extensible.
+A sample evaluation set includes direct factual questions, multi-step questions, cross-document reasoning, and unanswered questions. This provides a practical testing strategy aligned with the assignment’s evaluation criteria.
+
+---
+
+## 12. Engineering Quality and Maintainability
+
+The implementation is structured to promote maintainability and future expansion. The codebase is separated into clearly defined modules for ingestion, retrieval, vector storage, API access, and UI logic. Configuration is centralized, which simplifies experimentation with different models, chunk sizes, and retrieval thresholds.
+
+This separation of concerns also makes it easier to extend the system with improvements such as re-ranking, authentication, monitoring, or containerized deployment.
+
+---
+
+## 13. Scalability and Future Enhancements
+
+The current implementation is well suited for small to medium-sized internal knowledge bases. However, the architecture can be extended for larger deployments by introducing:
+
+- re-ranking models for improved precision,
+- more scalable vector databases such as Qdrant or Weaviate,
+- asynchronous ingestion pipelines,
+- role-based access control,
+- and deployment through Docker or Kubernetes.
+
+These enhancements would improve scalability and enterprise readiness without changing the core RAG architecture.
 
 ---
 
 ## 14. Security and Privacy Considerations
 
-Because the system runs locally with Ollama, it offers strong privacy benefits for internal documents. Sensitive enterprise content does not need to leave the machine.
+Since the system runs locally with Ollama, it provides strong privacy guarantees for confidential internal documents. No proprietary content needs to leave the workstation or local environment in order to generate answers.
 
-Potential future enhancements include:
-
-- user authentication,
-- role-based access control,
-- audit trails,
-- and document-level permissions.
+Future work could add authentication, audit logging, and document-level access policies to further align the system with enterprise security requirements.
 
 ---
 
-## 15. Limitations
+## 15. Conclusion
 
-Although the system is effective for the assignment and practical demos, it has some limitations:
-
-- ingestion can be slower for large document sets,
-- FAISS does not support native deletion as robustly as some vector databases,
-- scanned PDFs may require OCR support,
-- and table-heavy documents may lose formatting fidelity during extraction.
-
-These limitations are acceptable for the current implementation and can be addressed in future iterations.
-
----
-
-## 16. Future Enhancements
-
-Potential improvements include:
-
-- cross-encoder reranking for retrieval precision,
-- batch embedding for faster ingestion,
-- Docker deployment for easier setup,
-- conversation memory across turns,
-- RBAC and authentication,
-- and integration with a more advanced evaluation framework.
-
----
-
-## 17. Conclusion
-
-The Enterprise Knowledge Assistant demonstrates a strong end-to-end RAG implementation tailored for enterprise knowledge retrieval. It combines modern retrieval techniques, local LLM inference, and practical software design to create a dependable assistant that can answer questions based on internal documentation while maintaining traceability and privacy.
+The Enterprise Knowledge Assistant demonstrates a complete and practical RAG system for enterprise knowledge retrieval. It combines local LLM inference, vector search, hybrid retrieval, grounded prompting, and source-based answer generation into a cohesive application that is technically sound, privacy-preserving, and suitable for assignment submission and real-world demonstration.
